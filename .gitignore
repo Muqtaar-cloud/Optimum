@@ -1,0 +1,11 @@
+# Secrets (burner key for later auto mode)
+.env
+
+# Recon: HAR files hold live session cookies/JWTs; filled-in notes hold your address and site endpoints
+recon/*.har
+recon/*.local.md
+
+# Browser profile (later auto mode)
+profile/
+
+node_modules/
