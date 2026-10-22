@@ -35,7 +35,16 @@ async function main(): Promise<void> {
   let autoRedeem: ((codes: string[]) => Promise<void>) | undefined;
   if (cfg.stage >= 2) {
     const { startBot } = await import('./bot.js');
-    autoRedeem = await startBot(cfg, state, notify, stop.signal);
+    try {
+      autoRedeem = await startBot(cfg, state, notify, stop.signal);
+    } catch (e) {
+      // Never let a browser problem take down the code alerts.
+      await notify.send({
+        title: 'Auto-redeem failed to start',
+        body: `${(e as Error).message}\nRunning in stage 1 (alerts only). Fix and restart.`,
+        priority: 5,
+      });
+    }
   }
 
   await notify.send({

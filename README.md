@@ -20,7 +20,7 @@ also enters the code on the site, and from stage 3 it also mints.
 | Stage | What the bot does | Status |
 |---|---|---|
 | 1 | Pushes the code to your phone within seconds, with a link that opens the mint page in your wallet | built |
-| 2 | Also signs in and enters the code on the site | see `STAGE=2` below |
+| 2 | Also signs in and enters the code on the site | built; enable after setup + dry run |
 | 3 | Also mints | stays off until you've done one mint by hand (see below) |
 
 **What to expect:** "a few" means whatever one wallet is allowed, probably one card per code. The bot claims every code @get_optimum posts. It never uses more than one wallet or one X account. The cards are free (gas only) and non-transferable, and the mint window is about 178 days, so a manual fallback is never a disaster.
@@ -127,7 +127,57 @@ The body must start with `OPTBOT1`, and the `@@…@@` lines must stay on their o
 | **pipeline OK** | The phone → ntfy → PC path works. |
 | **MacroDroid listener may be dead** | No SEEN for 12 hours. Check MacroDroid's notification access and battery settings. |
 | **Relay reconnected** | The PC lost the ntfy stream for 5+ minutes. Posts made meanwhile were replayed. |
+| **dry run OK** | Stage 2 dry run: the code was typed in but not submitted. |
+| **Code accepted: XXXX** | The site accepted the code for the burner address shown. Mint from that address (stage 3 does it for you). |
+| **Code rejected / Needs you: …** | The site rejected the code, or something unexpected happened. The bot stopped; check the screenshot and finish by hand. |
+| **Wallet guard refused a request** | The page asked for something outside the allow-list. Expected in stage 2 if the site asks for a transaction, which shows its To and selector. |
+| **Needs you: redo follow quest** | The session check found the quest no longer done. Run `npm run setup` again. |
+| **Mint sent / MINTED** | Stage 3 sent the mint, then it confirmed. |
 | **Silence** | An ntfy outage or a PC that's off can't report itself. If "pipeline OK" stops arriving every 6 hours, check the PC and phone. |
+
+## Stage 2: auto-redeem (after stage 1 works)
+The bot drives its **own** Chrome profile (`data\profile`), separate from your normal Chrome. A wallet called **TurboBot** is injected into it, and the key never leaves Node: every request from the page goes through `src/provider/guard.ts`.
+- Read-only RPC calls are passed through.
+- Sign-in is allowed only as a SIWE message for the burner, on mainnet, for the domain you confirm.
+- Transactions are refused in stage 2.
+- Everything else is refused, including `eth_sign` and `eth_signTypedData*`.
+
+1. Fill in the wallet section of `.env`:
+   - `BURNER_KEY`: the **fresh funded test wallet's** private key.
+   - `RPC_URL`: any Ethereum mainnet RPC, e.g. a free Alchemy or Infura key.
+2. Close `run-bot.bat`, then run **`npm run setup`**.
+   - It shows the burner address. Type `yes` only if it's the test wallet.
+   - Chrome opens on the mint page and the bot connects the TurboBot wallet. When the site asks it to sign in, the terminal shows the **sign-in domain**. Type `yes` only if it's the TurboCards/Snag domain; it's saved to `data\local.json`.
+   - In that Chrome window, do the **Follow Optimum** quest and authorise X yourself. This is the only time you need to touch it. Don't enter any code.
+   - Press Enter. The bot re-reads the quest state and sends "Setup finished" to your phone.
+3. **Dry run:** set `STAGE=2` and `DRY_RUN=1` in `.env`, then start `run-bot.bat`.
+   - Send a test code through macro 1, for example with the If temporarily pointed at your friend, and set `X_DISPLAY_NAME` to their name for the test.
+   - Expect a **"dry run OK"** alert. The bot typed the code into the field but didn't submit it.
+   - Check the screenshot in `data\screenshots\`.
+4. Set `DRY_RUN=0` and restore `X_DISPLAY_NAME`. Leave it running.
+
+How redeeming works:
+- Only **verified** posts, where the title exactly equals `X_DISPLAY_NAME`, are submitted automatically.
+- At most 2 codes are tried per post. The second is tried only if the site said the first was *invalid*.
+- "Already used", rate limits and anything unrecognised stop the bot and alert you, with a screenshot.
+- A code is recorded in `data\state.json` **before** it's submitted, so a crash or restart can never resubmit it.
+- Every 2 hours the bot checks it's still signed in and the follow quest still shows as done. If not, it alerts you hours before the drop.
+
+**The site's buttons were guessed.** The page couldn't be inspected while this was written. If the dry run alerts "could not find the code input" or similar, look at the screenshot and tell me what the buttons are called, and it's a quick fix. `WALLET_OPTION_TEXT` changes which wallet option is clicked in the connect dialog.
+
+## Stage 3: auto-mint (off for the first drop)
+Expect stage 3 to be off for the first drop: there may be no real mint transaction to copy yet. Stage 2 already secures the scarce part, the code. The mint itself has about 178 days.
+
+1. Mint your first card **by hand** from the burner account, using the deep link from the alert.
+2. Open that transaction on Etherscan and copy:
+   - **To** → `MINT_TO`
+   - **Method ID** (the first 4 bytes of the input data, e.g. `0x1249c58b`) → `MINT_SELECTOR`
+3. Set `STAGE=3`. The bot refuses to start without both values.
+
+From then on, after a code is accepted the bot clicks **Mint Now** on one enabled card. It only ever clicks a card that contains `MINT_CARD_TEXT`, never a button elsewhere on the page.
+- The guard signs only a transaction from the burner, to `MINT_TO`, with that selector, value 0, and gas under your caps.
+- If gas is above `MAX_FEE_GWEI` / `MAX_GAS_ETH`, it waits and retries for up to 30 minutes, then alerts.
+- You get **Mint sent**, then **MINTED** with the Etherscan link.
 
 ## Manual fallback (keep it ready)
 - Import the **same burner wallet** into your phone wallet app and select it. A code redeemed by the bot only works for that address.
