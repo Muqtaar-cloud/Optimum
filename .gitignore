@@ -9,3 +9,6 @@ recon/*.local.md
 profile/
 
 node_modules/
+
+# Bot runtime data: state, pid lock, captures, screenshots, Chrome profile
+data/
